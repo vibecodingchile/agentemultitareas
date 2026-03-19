@@ -1,0 +1,21 @@
+
+{
+  "name": "anci-compliance-assistant",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "14.1.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "zod": "^3.23.8",
+    "react-hook-form": "^7.51.0",
+    "@hookform/resolvers": "^3.3.4",
+    "@react-pdf/renderer": "^3.4.4",
+    "prisma": "^5.8.0",
+    "@prisma/client": "^5.8.0"
+  }
+}
