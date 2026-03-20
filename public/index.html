@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CENIA — Agente IA Generador de Informes</title>
+  <meta name="description" content="Agente IA del Centro Nacional de Inteligencia Artificial de Chile. Genera informes Art. 22 Ley 19.886 automáticamente." />
+
+  <!-- React + ReactDOM + Babel (sin bundler, funciona directo) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body { margin: 0; font-family: sans-serif; background: #f8faff; }
+    #root { min-height: 100vh; }
+    /* Loading screen antes de que React monte */
+    #loading {
+      position: fixed; inset: 0; background: #0a0f1e;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px; z-index: 9999;
+      transition: opacity .4s;
+    }
+    #loading-title {
+      font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: 700;
+      color: #fff; letter-spacing: -.01em;
+    }
+    #loading-sub { font-size: 12px; color: rgba(255,255,255,.4); font-family: monospace; }
+    #loading-bar {
+      width: 200px; height: 3px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden;
+    }
+    #loading-fill {
+      height: 100%; width: 0; background: linear-gradient(90deg, #2563eb, #0d9488);
+      border-radius: 2px; transition: width .3s;
+      animation: loadAnim 1.8s ease forwards;
+    }
+    @keyframes loadAnim {
+      0%   { width: 0   }
+      60%  { width: 75% }
+      100% { width: 95% }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div style="width:44px;height:44px;background:linear-gradient(135deg,#2563eb,#0d9488);
+    clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);
+    display:flex;align-items:center;justify-content:center;">
+    <span style="color:#fff;font-weight:800;font-size:14px;">IA</span>
+  </div>
+  <div id="loading-title">CENIA Agente IA</div>
+  <div id="loading-bar"><div id="loading-fill"></div></div>
+  <div id="loading-sub">Cargando agente · Art. 22 Ley 19.886</div>
+</div>
+
+<div id="root"></div>
+
+<script type="text/babel">
+
+/* ── FONTS ── */
+const FONTS_EL = document.createElement("link");
+FONTS_EL.rel = "stylesheet";
+FONTS_EL.href = "https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Syne+Mono&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap";
+document.head.appendChild(FONTS_EL);
+
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ── CSS ── */
+const CSS = `
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0a0f1e;--ink2:#1e2740;--ink3:#3d4f7c;
+  --sky:#e8f0fe;--sky2:#c7d9fd;--sky3:#f0f5ff;
+  --blue:#2563eb;--blue-l:#3b82f6;--blue-xl:#dbeafe;
+  --teal:#0d9488;--teal-l:#14b8a6;--teal-xl:#ccfbf1;
+  --amber:#d97706;--amber-xl:#fef3c7;
+  --red:#dc2626;--red-xl:#fee2e2;
+  --green:#16a34a;--green-xl:#dcfce7;
+  --white:#ffffff;--off:#f8faff;--off2:#f0f4ff;
+  --border:#e2e8f0;--border2:#c7d2e7;
+  --ff:'Plus Jakarta Sans',sans-serif;
+  --fd:'Syne',sans-serif;
+  --fm:'Syne Mono',monospace;
+  --sh:0 1px 3px rgba(10,15,30,.06),0 4px 16px rgba(10,15,30,.08);
+  --sh-lg:0 8px 32px rgba(10,15,30,.14);
+}
+html,body{min-height:100vh;background:var(--off);color:var(--ink);font-family:var(--ff)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--off2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes dotBlink{0%,100%{opacity:1}50%{opacity:.2}}
+.fu{animation:fadeUp .4s ease both}
+.fu1{animation:fadeUp .4s .06s ease both}
+.fu2{animation:fadeUp .4s .12s ease both}
+.shell{display:grid;grid-template-columns:260px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;background:var(--ink);position:sticky;top:0;z-index:200}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-hex{width:36px;height:36px;background:linear-gradient(135deg,var(--blue),var(--teal));
+  clip-path:polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.brand-name{font-family:var(--fd);font-size:18px;font-weight:800;color:var(--white);letter-spacing:-.01em}
+.brand-tag{font-size:10px;color:rgba(255,255,255,.4);font-family:var(--fm);margin-left:2px}
+.topbar-r{display:flex;align-items:center;gap:10px}
+.model-badge{display:flex;align-items:center;gap:6px;padding:5px 12px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  border-radius:20px;font-size:11px;color:rgba(255,255,255,.7);font-family:var(--fm)}
+.model-dot{width:6px;height:6px;border-radius:50%;background:var(--teal-l);animation:pulse 2s infinite}
+.sidebar{background:var(--white);border-right:1px solid var(--border);
+  padding:20px 0;display:flex;flex-direction:column;
+  position:sticky;top:64px;height:calc(100vh - 64px);overflow-y:auto}
+.nav-sec{padding:14px 20px 5px;font-size:9.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--border2)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;
+  cursor:pointer;font-size:12.5px;color:var(--ink3);transition:all .15s;
+  border-left:3px solid transparent;font-weight:400}
+.nav-item:hover{background:var(--off);color:var(--ink2)}
+.nav-item.on{background:var(--sky);color:var(--blue);border-left-color:var(--blue);font-weight:600}
+.nav-ico{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.nav-foot{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
+.nav-hint{font-size:10px;color:var(--border2);font-family:var(--fm);line-height:1.6}
+.main{background:var(--off);padding:28px 32px;overflow-y:auto;height:calc(100vh - 64px)}
+.ph{margin-bottom:24px}
+.ph-title{font-family:var(--fd);font-size:28px;font-weight:800;color:var(--ink);letter-spacing:-.02em}
+.ph-sub{font-size:12px;color:var(--ink3);margin-top:4px}
+.ph-actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--ff);
+  font-size:12px;font-weight:600;border:none;cursor:pointer;
+  border-radius:7px;padding:9px 18px;transition:all .15s}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-blue:hover{background:var(--blue-l);transform:translateY(-1px);box-shadow:0 4px 14px rgba(37,99,235,.35)}
+.btn-ghost{background:transparent;color:var(--ink3);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:var(--border2);color:var(--ink2);background:var(--white)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none !important;box-shadow:none !important}
+.btn-sm{padding:6px 13px;font-size:11px}
+.card{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:22px;box-shadow:var(--sh)}
+.card-title{font-size:11px;font-weight:700;color:var(--ink3);letter-spacing:.07em;text-transform:uppercase;margin-bottom:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px}
+.mb{margin-bottom:18px}
+.rtype-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+.rtype{background:var(--white);border:2px solid var(--border);border-radius:12px;
+  padding:18px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.rtype:hover{border-color:var(--blue-l);transform:translateY(-2px);box-shadow:var(--sh)}
+.rtype.on{border-color:var(--blue);background:var(--sky3)}
+.rtype-ico{font-size:26px;margin-bottom:10px}
+.rtype-name{font-family:var(--fd);font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px}
+.rtype-desc{font-size:11px;color:var(--ink3);line-height:1.5}
+.rtype-badge{position:absolute;top:10px;right:10px;background:var(--blue);
+  color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px}
+.rtype-check{position:absolute;top:10px;right:10px;width:20px;height:20px;
+  border-radius:50%;background:var(--blue);display:flex;align-items:center;
+  justify-content:center;font-size:11px;color:#fff}
+.msg{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid var(--off2);animation:fadeUp .3s ease both}
+.msg:last-child{border-bottom:none}
+.msg-av{width:34px;height:34px;border-radius:9px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
+.msg-av.user{background:var(--ink);color:var(--white);font-family:var(--fd);font-size:13px}
+.msg-av.agent{background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;font-size:16px}
+.msg-body{flex:1;min-width:0}
+.msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.msg-who{font-size:12px;font-weight:700;color:var(--ink)}
+.msg-time{font-size:10.5px;color:var(--ink3);font-family:var(--fm)}
+.msg-tag{font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:var(--sky);color:var(--blue)}
+.msg-text{font-size:13px;color:var(--ink2);line-height:1.7;white-space:pre-wrap}
+.msg-text p{margin-bottom:10px}
+.msg-text p:last-child{margin-bottom:0}
+.msg-text h2{font-family:var(--fd);font-size:16px;font-weight:700;color:var(--ink);
+  margin:16px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--blue)}
+.msg-text h3{font-family:var(--fd);font-size:14px;font-weight:700;color:var(--ink2);margin:12px 0 6px}
+.msg-text ul{margin:8px 0 8px 18px}
+.msg-text ul li{margin-bottom:5px;font-size:13px;color:var(--ink2)}
+.msg-text strong{font-weight:700;color:var(--ink)}
+.thinking{display:flex;align-items:center;gap:5px;padding:4px 0}
+.thinking span{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:dotBlink 1.2s infinite}
+.thinking span:nth-child(2){animation-delay:.2s}
+.thinking span:nth-child(3){animation-delay:.4s}
+.input-field{flex:1;background:var(--off);border:1px solid var(--border);
+  border-radius:8px;padding:10px 14px;font-family:var(--ff);font-size:13px;
+  color:var(--ink);resize:none;outline:none;min-height:44px;max-height:140px;transition:border-color .15s}
+.input-field:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.input-field::placeholder{color:var(--border2)}
+.input-hints{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.hint-pill{background:var(--sky3);border:1px solid var(--sky2);color:var(--blue);
+  font-size:10.5px;font-weight:500;padding:4px 11px;border-radius:20px;cursor:pointer;transition:all .15s}
+.hint-pill:hover{background:var(--sky)}
+.prog-bar{height:4px;background:var(--off2);border-radius:2px;overflow:hidden;margin:8px 0}
+.prog-fill{height:100%;border-radius:2px;transition:width 1.2s ease;background:linear-gradient(90deg,var(--blue),var(--teal))}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:10.5px;font-weight:600}
+.badge-ok{background:var(--green-xl);color:var(--green)}
+.badge-warn{background:var(--amber-xl);color:var(--amber)}
+.toast{position:fixed;bottom:24px;right:24px;z-index:999;
+  background:var(--ink);color:#fff;border-radius:10px;
+  padding:12px 18px;font-size:12.5px;display:flex;align-items:center;gap:10px;
+  animation:fadeUp .3s ease;box-shadow:var(--sh-lg);border-left:3px solid var(--teal)}
+.copy-btn{background:transparent;border:1px solid var(--border);color:var(--ink3);
+  border-radius:5px;padding:4px 9px;font-size:10.5px;cursor:pointer;transition:all .15s;font-family:var(--ff)}
+.copy-btn:hover{background:var(--off);color:var(--ink)}
+.ctx-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.ctx-item{background:var(--off2);border:1px solid var(--border);border-radius:8px;padding:12px}
+.ctx-lbl{font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px}
+.ctx-val{font-family:var(--fd);font-size:22px;font-weight:700;color:var(--ink)}
+.ctx-sub{font-size:10px;color:var(--ink3);margin-top:2px}
+.hist-item{padding:10px 20px;cursor:pointer;border-bottom:1px solid var(--off2);transition:background .15s}
+.hist-item:hover{background:var(--off)}
+.hist-type{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.hist-name{font-size:12px;font-weight:600;color:var(--ink2)}
+.hist-date{font-size:10px;color:var(--ink3);font-family:var(--fm)}
+@media(max-width:768px){
+  .shell{grid-template-columns:1fr;grid-template-rows:64px auto 1fr}
+  .sidebar{position:relative;top:0;height:auto;flex-direction:row;overflow-x:auto;padding:8px 0}
+  .nav-sec{display:none}
+  .rtype-grid{grid-template-columns:1fr 1fr}
+  .ctx-grid{grid-template-columns:1fr 1fr}
+}
+`;
+
+const styleEl = document.createElement("style");
+styleEl.textContent = CSS;
+document.head.appendChild(styleEl);
+
+/* ── DATA ── */
+const CENIA_DATA = {
+  proyectos: [
+    {id:"CENIA-001",nombre:"Capacitación IA PYMES",area:"Formación",lead:"Ana Muñoz",presupuesto:18000000,ejecutado:13200000,hitos:6,hitosOk:4,estado:"En Curso"},
+    {id:"CENIA-002",nombre:"Observatorio IA Latam",area:"Investigación",lead:"Carlos Vera",presupuesto:32000000,ejecutado:14800000,hitos:8,hitosOk:3,estado:"En Curso"},
+    {id:"CENIA-003",nombre:"Red Investigadores",area:"Ecosistema",lead:"María Torres",presupuesto:12000000,ejecutado:10600000,hitos:5,hitosOk:5,estado:"Activo"},
+    {id:"CENIA-004",nombre:"Datos Abiertos",area:"Datos",lead:"Diego Ramos",presupuesto:25000000,ejecutado:2500000,hitos:7,hitosOk:0,estado:"Pendiente"},
+    {id:"CENIA-005",nombre:"IA en Salud Pública",area:"Aplicaciones",lead:"Sofía Lagos",presupuesto:42000000,ejecutado:25400000,hitos:9,hitosOk:5,estado:"En Revisión"},
+    {id:"CENIA-006",nombre:"Formación Docentes",area:"Formación",lead:"Luis Pérez",presupuesto:9000000,ejecutado:450000,hitos:4,hitosOk:0,estado:"Pendiente"},
+  ],
+  contratos: [
+    {id:"CONT-001",proyecto:"CENIA-001",proveedor:"Ana Muñoz Díaz",tipo:"Natural",monto:3200000,estado:"Vigente"},
+    {id:"CONT-002",proyecto:"CENIA-001",proveedor:"Inmobiliaria El Centro",tipo:"Jurídica",monto:480000,estado:"Vigente"},
+    {id:"CONT-003",proyecto:"CENIA-002",proveedor:"Amazon Web Services",tipo:"Jurídica",monto:2400000,estado:"Vigente"},
+    {id:"CONT-004",proyecto:"CENIA-002",proveedor:"Dra. María Torres",tipo:"Natural",monto:4800000,estado:"Vigente"},
+    {id:"CONT-005",proyecto:"CENIA-005",proveedor:"TechMed Chile SpA",tipo:"Jurídica",monto:8500000,estado:"Finalizado"},
+    {id:"CONT-006",proyecto:"CENIA-005",proveedor:"Dr. Carlos Herrera",tipo:"Natural",monto:6400000,estado:"Vigente"},
+    {id:"CONT-007",proyecto:"CENIA-003",proveedor:"DevCL SpA",tipo:"Jurídica",monto:12000000,estado:"Finalizado"},
+    {id:"CONT-008",proyecto:"CENIA-004",proveedor:"DataGov Consultores",tipo:"Jurídica",monto:7500000,estado:"Vigente"},
+    {id:"CONT-009",proyecto:"CENIA-006",proveedor:"Studio Pedagógico SpA",tipo:"Jurídica",monto:2100000,estado:"Vigente"},
+    {id:"CONT-010",proyecto:"CENIA-006",proveedor:"Luis Pérez Profesor",tipo:"Natural",monto:1800000,estado:"Vigente"},
+  ],
+  hitos: [
+    {id:"H-001",proyecto:"CENIA-001",nombre:"Diseño curricular aprobado",estado:"Completado",fecha:"2025-11-15"},
+    {id:"H-002",proyecto:"CENIA-001",nombre:"Plataforma e-learning activa",estado:"Completado",fecha:"2025-12-01"},
+    {id:"H-003",proyecto:"CENIA-001",nombre:"Primera cohorte 50 PYMES",estado:"Completado",fecha:"2026-01-28"},
+    {id:"H-004",proyecto:"CENIA-001",nombre:"Evaluación formativa T1",estado:"Completado",fecha:"2026-02-25"},
+    {id:"H-005",proyecto:"CENIA-001",nombre:"Segunda cohorte 50 PYMES",estado:"En Curso",fecha:"2026-03-31"},
+    {id:"H-006",proyecto:"CENIA-001",nombre:"Informe final y métricas",estado:"Pendiente",fecha:"2026-04-30"},
+    {id:"H-007",proyecto:"CENIA-002",nombre:"Marco metodológico",estado:"Completado",fecha:"2025-12-14"},
+    {id:"H-008",proyecto:"CENIA-002",nombre:"Recolección datos 5 países",estado:"Completado con retraso",fecha:"2026-02-10"},
+    {id:"H-009",proyecto:"CENIA-002",nombre:"Análisis estadístico fase 1",estado:"Completado",fecha:"2026-02-26"},
+    {id:"H-010",proyecto:"CENIA-002",nombre:"Informe comparativo latam",estado:"En Curso",fecha:"2026-04-30"},
+    {id:"H-011",proyecto:"CENIA-005",nombre:"Protocolo ético aprobado",estado:"Completado",fecha:"2025-09-28"},
+    {id:"H-012",proyecto:"CENIA-005",nombre:"Piloto Hospital Sótero",estado:"Completado",fecha:"2026-01-15"},
+    {id:"H-013",proyecto:"CENIA-005",nombre:"Validación modelo diagnóstico",estado:"En Curso",fecha:"2026-03-31"},
+  ],
+  finanzas:{ingresos:92000000,gastos:56950000,balance:35050000,presupuestoTotal:138000000,pctEjecucion:41.3},
+};
+
+const fmtCLP = n => new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n);
+const nowTime = () => new Date().toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"});
+
+const REPORT_TYPES = [
+  {id:"ejecutivo",  icon:"📊",name:"Informe Ejecutivo",   desc:"KPIs generales de todos los proyectos CENIA",badge:"Popular"},
+  {id:"art22",      icon:"⚖️",name:"Cumplimiento Art. 22",desc:"Análisis normativo Ley 19.886 por contrato",  badge:"Legal"},
+  {id:"financiero", icon:"💰",name:"Informe Financiero",  desc:"Ejecución presupuestaria y balance",           badge:null},
+  {id:"hitos",      icon:"✅",name:"Estado de Hitos",     desc:"Entregables, retrasos y multas aplicables",    badge:null},
+  {id:"proveedores",icon:"👤",name:"Proveedores",         desc:"PN retención 10% · PJ IVA 19%",                badge:"Tributario"},
+  {id:"custom",     icon:"✏️",name:"Personalizado",       desc:"Describe el informe que necesitas",            badge:"IA"},
+];
+
+const QUICK_PROMPTS = [
+  "¿Qué proyectos tienen riesgo de sobreejecutar presupuesto?",
+  "Genera el informe Art. 22 completo para todos los contratos",
+  "¿Cuáles hitos tienen retraso y multa aplicable?",
+  "Resume el estado financiero de CENIA-005 Salud",
+  "Lista retenciones 10% personas naturales pendientes",
+  "¿Qué necesita atención urgente este trimestre?",
+];
+
+const HIST = [
+  {tipo:"Ejecutivo",nombre:"Informe Marzo 2026",fecha:"04/03/2026 07:30"},
+  {tipo:"Art. 22",nombre:"Cumplimiento Q1 2026",fecha:"01/03/2026 15:22"},
+  {tipo:"Financiero",nombre:"Ejecución Presupuesto Feb",fecha:"28/02/2026 09:10"},
+  {tipo:"Hitos",nombre:"Estado Entregables Feb",fecha:"25/02/2026 11:45"},
+];
+
+function buildSystem(typeName) {
+  const d = CENIA_DATA;
+  const hitosOk = d.hitos.filter(h=>h.estado==="Completado").length;
+  return `Eres el Agente IA oficial de CENIA (Centro Nacional de Inteligencia Artificial de Chile).
+Especialidad: generación de informes institucionales de gestión de proyectos.
+Marco legal: Ley 19.886 Art. 22, Ley Impuesto Renta (ret. 10% PN), DL 825 (IVA 19% PJ).
+Fecha: ${new Date().toLocaleDateString("es-CL",{day:"2-digit",month:"long",year:"numeric"})}.
+
+DATOS ACTUALES CENIA:
+PROYECTOS:
+${d.proyectos.map(p=>`- ${p.id}: "${p.nombre}" | ${p.area} | Lead:${p.lead} | Pres:${fmtCLP(p.presupuesto)} | Ejec:${fmtCLP(p.ejecutado)}(${Math.round(p.ejecutado/p.presupuesto*100)}%) | Hitos:${p.hitosOk}/${p.hitos} | ${p.estado}`).join("\n")}
+
+FINANZAS: Ingresos:${fmtCLP(d.finanzas.ingresos)} | Gastos:${fmtCLP(d.finanzas.gastos)} | Balance:${fmtCLP(d.finanzas.balance)} | Pres.Total:${fmtCLP(d.finanzas.presupuestoTotal)} | Ejec:${d.finanzas.pctEjecucion}%
+
+CONTRATOS (${d.contratos.length}):
+${d.contratos.map(c=>`- ${c.id}: ${c.proveedor} | ${c.tipo} | ${fmtCLP(c.monto)} | ${c.estado} | Art22:OK`).join("\n")}
+
+HITOS (${d.hitos.length} total, ${hitosOk} completados):
+${d.hitos.map(h=>`- ${h.id} ${h.proyecto}: "${h.nombre}" | ${h.estado} | ${h.fecha}`).join("\n")}
+
+TIPO INFORME: ${typeName}
+INSTRUCCIONES: Usa ## para secciones, ### para subsecciones. Incluye Resumen Ejecutivo, análisis detallado, conclusiones y recomendaciones. Cita siempre el marco legal. Usa lenguaje formal institucional chileno. Señala alertas y riesgos claramente.`;
+}
+
+function Toast({msg,onClose}) {
+  useEffect(()=>{const t=setTimeout(onClose,3200);return()=>clearTimeout(t);},[]);
+  return <div className="toast"><span>✓</span><span>{msg}</span></div>;
+}
+
+function Thinking() {
+  return (
+    <div className="msg">
+      <div className="msg-av agent">🤖</div>
+      <div className="msg-body">
+        <div className="msg-meta">
+          <span className="msg-who">Agente CENIA IA</span>
+          <span className="msg-tag">Redactando informe…</span>
+        </div>
+        <div className="thinking"><span/><span/><span/></div>
+      </div>
+    </div>
+  );
+}
+
+function MsgText({text}) {
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith("## ")) { out.push(<h2 key={i}>{l.slice(3)}</h2>); }
+    else if (l.startsWith("### ")) { out.push(<h3 key={i}>{l.slice(4)}</h3>); }
+    else if (l.startsWith("- ") || l.startsWith("• ")) {
+      const items = [];
+      while (i < lines.length && (lines[i].startsWith("- ")||lines[i].startsWith("• "))) {
+        items.push(<li key={i}>{lines[i].slice(2)}</li>);
+        i++;
+      }
+      out.push(<ul key={"ul"+i}>{items}</ul>);
+      continue;
+    } else if (l.trim()==="") { out.push(<br key={i}/>); }
+    else {
+      const html = l.replace(/\*\*(.*?)\*\*/g,(_,t)=>`<strong>${t}</strong>`);
+      out.push(<p key={i} dangerouslySetInnerHTML={{__html:html}}/>);
+    }
+    i++;
+  }
+  return <div className="msg-text">{out}</div>;
+}
+
+function App() {
+  const [page, setPage] = useState("agente");
+  const [selType, setSelType] = useState("ejecutivo");
+  const [messages, setMessages] = useState([{
+    role:"agent",
+    content:`## Bienvenido al Agente IA de CENIA\n\nSoy tu asistente especializado en generación de informes institucionales. Tengo acceso en tiempo real a todos los datos de proyectos, contratos, finanzas e hitos.\n\n**¿Qué puedo generar?**\n\n- Informes ejecutivos y financieros\n- Análisis de cumplimiento **Art. 22 Ley 19.886**\n- Estado de hitos y evaluación de multas\n- Retenciones 10% PN y IVA 19% PJ\n- Cualquier informe personalizado que necesites\n\nSelecciona el tipo de informe arriba o escríbeme directamente.`,
+    time: nowTime(),
+  }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [toast, setToast] = useState(null);
+  const chatRef = useRef(null);
+  const taRef = useRef(null);
+
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [messages, loading]);
+
+  // Hide loading screen when React mounts
+  useEffect(() => {
+    const el = document.getElementById("loading");
+    if (el) { el.style.opacity = "0"; setTimeout(()=>el.remove(), 400); }
+  }, []);
+
+  const send = useCallback(async (text) => {
+    if (!text.trim() || loading) return;
+    const userMsg = text.trim();
+    setInput("");
+    setMessages(prev => [...prev, {role:"user", content:userMsg, time:nowTime()}]);
+    setLoading(true);
+    setProgress(0);
+
+    let p = 0;
+    const timer = setInterval(()=>{ p=Math.min(p+Math.random()*10, 88); setProgress(p); }, 350);
+
+    try {
+      const typeName = REPORT_TYPES.find(r=>r.id===selType)?.name || "General";
+      const apiMessages = [
+        ...messages.map(m=>({role: m.role==="agent"?"assistant":"user", content:m.content})),
+        {role:"user", content:userMsg}
+      ];
+
+      // ← Llama a tu propio backend en /api/chat (no expone la API key)
+      const res = await fetch("/api/chat", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          messages: apiMessages,
+          system: buildSystem(typeName),
+        }),
+      });
+
+      clearInterval(timer);
+      setProgress(100);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const reply = data.content?.[0]?.text || "No se pudo generar el informe.";
+
+      setTimeout(()=>{
+        setMessages(prev=>[...prev,{role:"agent",content:reply,time:nowTime()}]);
+        setLoading(false); setProgress(0);
+      }, 250);
+
+    } catch(err) {
+      clearInterval(timer);
+      setLoading(false); setProgress(0);
+      setMessages(prev=>[...prev,{
+        role:"agent",
+        content:`⚠️ Error: ${err.message}. Verifica que el servidor esté corriendo y la API key esté configurada en Vercel.`,
+        time:nowTime(),
+      }]);
+    }
+  }, [loading, messages, selType]);
+
+  const generateReport = () => {
+    if (selType==="custom") { setInput("Necesito un informe sobre "); taRef.current?.focus(); return; }
+    const prompts = {
+      ejecutivo:"Genera el informe ejecutivo completo de CENIA con estado de todos los proyectos, KPIs financieros y principales alertas del período.",
+      art22:"Genera el informe de cumplimiento del Artículo 22 Ley 19.886 para todos los contratos CENIA. Verifica los 8 requisitos y emite recomendaciones.",
+      financiero:"Genera el informe financiero completo: ejecución presupuestaria por proyecto, ingresos, gastos, balance y proyección al cierre.",
+      hitos:"Genera el informe de hitos y entregables: completados, en curso, retrasados y evaluación de multas según contratos.",
+      proveedores:"Genera el informe de proveedores: personas naturales con retención 10%, personas jurídicas con IVA 19% y cumplimiento tributario.",
+    };
+    send(prompts[selType] || `Genera informe: ${selType}`);
+  };
+
+  const d = CENIA_DATA;
+
+  return (
+    <div className="shell">
+      {/* TOPBAR */}
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-hex">
+            <span style={{fontSize:13,fontWeight:800,color:"#fff",fontFamily:"Syne"}}>IA</span>
+          </div>
+          <div>
+            <div className="brand-name">CENIA Agente IA</div>
+            <div className="brand-tag">GENERADOR DE INFORMES · LEY 19.886</div>
+          </div>
+        </div>
+        <div className="topbar-r">
+          <div className="model-badge">
+            <div className="model-dot"/>
+            claude-sonnet-4 · activo
+          </div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.4)",fontFamily:"Syne Mono",
+            padding:"5px 12px",border:"1px solid rgba(255,255,255,.08)",borderRadius:20}}>
+            {messages.length - 1} informes
+          </div>
+        </div>
+      </header>
+
+      {/* SIDEBAR */}
+      <nav className="sidebar">
+        <div className="nav-sec">Navegación</div>
+        {[
+          {id:"agente",ico:"🤖",label:"Agente Generador"},
+          {id:"historial",ico:"📋",label:"Historial"},
+          {id:"datos",ico:"📊",label:"Datos del Sistema"},
+        ].map(item=>(
+          <div key={item.id} className={`nav-item${page===item.id?" on":""}`} onClick={()=>setPage(item.id)}>
+            <span className="nav-ico">{item.ico}</span>{item.label}
+          </div>
+        ))}
+        <div className="nav-sec" style={{marginTop:8}}>Tipos de Informe</div>
+        {REPORT_TYPES.map(rt=>(
+          <div key={rt.id}
+            className={`nav-item${selType===rt.id&&page==="agente"?" on":""}`}
+            onClick={()=>{setSelType(rt.id);setPage("agente");}}>
+            <span className="nav-ico">{rt.icon}</span>
+            <span style={{fontSize:11.5}}>{rt.name}</span>
+          </div>
+        ))}
+        <div className="nav-foot">
+          <div className="nav-hint">Powered by Claude<br/>Art. 22 Ley 19.886<br/>CENIA Chile 2026</div>
+        </div>
+      </nav>
+
+      {/* MAIN */}
+      <main className="main">
+
+        {/* AGENTE */}
+        {page==="agente" && (
+          <div>
+            <div className="ph fu">
+              <div className="ph-title">Agente Generador de Informes</div>
+              <div className="ph-sub">CENTRO NACIONAL DE INTELIGENCIA ARTIFICIAL · POWERED BY CLAUDE SONNET 4</div>
+              <div className="ph-actions">
+                <button className="btn btn-ghost btn-sm" onClick={()=>{setMessages([{role:"agent",content:"Chat limpiado. ¿Qué informe necesitas?",time:nowTime()}]);}}>🗑 Limpiar</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>{
+                  const last = [...messages].reverse().find(m=>m.role==="agent");
+                  if(last){navigator.clipboard.writeText(last.content).catch(()=>{}); setToast("Copiado al portapapeles");}
+                }}>📋 Copiar último informe</button>
+              </div>
+            </div>
+
+            {/* Type selector */}
+            <div className="rtype-grid fu">
+              {REPORT_TYPES.map(rt=>(
+                <div key={rt.id} className={`rtype${selType===rt.id?" on":""}`} onClick={()=>setSelType(rt.id)}>
+                  {selType===rt.id
+                    ? <div className="rtype-check">✓</div>
+                    : rt.badge && <div className="rtype-badge">{rt.badge}</div>}
+                  <div className="rtype-ico">{rt.icon}</div>
+                  <div className="rtype-name">{rt.name}</div>
+                  <div className="rtype-desc">{rt.desc}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Generate btn */}
+            <div style={{display:"flex",gap:10,marginBottom:18,alignItems:"center"}} className="fu1">
+              <button className="btn btn-blue" onClick={generateReport} disabled={loading}>
+                {loading?"⏳ Generando…":`⚡ Generar ${REPORT_TYPES.find(r=>r.id===selType)?.name}`}
+              </button>
+              <span style={{fontSize:11.5,color:"var(--ink3)"}}>o escribe tu consulta abajo →</span>
+            </div>
+
+            {/* Progress */}
+            {loading && (
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,color:"var(--blue)",marginBottom:4,fontFamily:"Syne Mono"}}>
+                  Analizando datos y redactando… {Math.round(progress)}%
+                </div>
+                <div className="prog-bar"><div className="prog-fill" style={{width:`${progress}%`}}/></div>
+              </div>
+            )}
+
+            {/* Chat */}
+            <div className="card fu2" style={{padding:0,overflow:"hidden"}}>
+              <div style={{padding:"10px 20px",background:"var(--off2)",borderBottom:"1px solid var(--border)",
+                display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:11,fontWeight:700,color:"var(--ink3)",letterSpacing:".05em",textTransform:"uppercase"}}>
+                  Conversación con el Agente
+                </span>
+                <span style={{fontSize:10,background:"var(--sky)",color:"var(--blue)",padding:"2px 8px",borderRadius:10,fontWeight:700}}>
+                  {messages.length} mensajes
+                </span>
+              </div>
+              <div ref={chatRef} style={{padding:"8px 20px",maxHeight:440,overflowY:"auto"}}>
+                {messages.map((m,i)=>(
+                  <div key={i} className="msg">
+                    <div className={`msg-av ${m.role}`}>{m.role==="agent"?"🤖":"CG"}</div>
+                    <div className="msg-body">
+                      <div className="msg-meta">
+                        <span className="msg-who">{m.role==="agent"?"Agente CENIA IA":"Coordinación Proyectos"}</span>
+                        <span className="msg-time">{m.time}</span>
+                        {m.role==="agent"&&i>0&&(
+                          <button className="copy-btn" onClick={()=>{
+                            navigator.clipboard.writeText(m.content).catch(()=>{});
+                            setToast("Copiado");
+                          }}>📋</button>
+                        )}
+                      </div>
+                      <MsgText text={m.content}/>
+                    </div>
+                  </div>
+                ))}
+                {loading && <Thinking/>}
+              </div>
+              <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",background:"var(--white)"}}>
+                <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+                  <textarea ref={taRef} className="input-field" rows={2}
+                    value={input} onChange={e=>setInput(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}}}
+                    placeholder="Escribe tu consulta… (Enter envía, Shift+Enter nueva línea)"
+                    disabled={loading}/>
+                  <button className="btn btn-blue" onClick={()=>send(input)} disabled={loading||!input.trim()}>
+                    {loading ? <span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> : "→"}
+                  </button>
+                </div>
+                <div className="input-hints">
+                  {QUICK_PROMPTS.map((p,i)=>(
+                    <span key={i} className="hint-pill" onClick={()=>send(p)}>{p}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* HISTORIAL */}
+        {page==="historial" && (
+          <div>
+            <div className="ph fu"><div className="ph-title">Historial de Informes</div><div className="ph-sub">INFORMES GENERADOS ANTERIORMENTE</div></div>
+            <div className="card fu1">
+              {HIST.map((h,i)=>(
+                <div key={i} className="hist-item" onClick={()=>setPage("agente")}>
+                  <div className="hist-type">{h.tipo}</div>
+                  <div className="hist-name">{h.nombre}</div>
+                  <div className="hist-date">{h.fecha}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* DATOS */}
+        {page==="datos" && (
+          <div>
+            <div className="ph fu"><div className="ph-title">Datos del Sistema</div><div className="ph-sub">DATOS QUE EL AGENTE UTILIZA PARA GENERAR INFORMES</div></div>
+            <div className="ctx-grid fu">
+              {[
+                {l:"Proyectos",v:d.proyectos.length,s:`${d.proyectos.filter(p=>p.estado==="En Curso").length} en curso`},
+                {l:"Contratos",v:d.contratos.length,s:"10/10 Art.22 OK"},
+                {l:"Presupuesto",v:"$138M",s:`${Math.round(d.proyectos.reduce((s,p)=>s+p.ejecutado,0)/d.finanzas.presupuestoTotal*100)}% ejecutado`},
+                {l:"Hitos",v:d.hitos.length,s:`${d.hitos.filter(h=>h.estado==="Completado").length} completados`},
+              ].map(k=>(
+                <div key={k.l} className="ctx-item">
+                  <div className="ctx-lbl">{k.l}</div>
+                  <div className="ctx-val">{k.v}</div>
+                  <div className="ctx-sub">{k.s}</div>
+                </div>
+              ))}
+            </div>
+            <div className="card fu1">
+              <div className="card-title">Proyectos cargados</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>
+                  {["ID","Nombre","Presupuesto","Ejecutado","%","Estado"].map(h=>(
+                    <th key={h} style={{padding:"7px 10px",background:"var(--ink)",color:"#fff",textAlign:"left",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {d.proyectos.map((p,i)=>(
+                    <tr key={p.id}>
+                      {[
+                        <span style={{fontFamily:"Syne Mono",color:"var(--blue)",fontWeight:600,fontSize:11}}>{p.id}</span>,
+                        p.nombre,
+                        <span style={{fontFamily:"Syne Mono",fontSize:11}}>{fmtCLP(p.presupuesto)}</span>,
+                        <span style={{fontFamily:"Syne Mono",fontSize:11,color:"var(--teal)"}}>{fmtCLP(p.ejecutado)}</span>,
+                        <span style={{fontWeight:700,color:p.ejecutado/p.presupuesto>.9?"var(--red)":"var(--blue)"}}>{Math.round(p.ejecutado/p.presupuesto*100)}%</span>,
+                        <span className={`badge badge-${p.estado==="En Curso"||p.estado==="Activo"?"ok":"warn"}`}>{p.estado}</span>,
+                      ].map((v,j)=>(
+                        <td key={j} style={{padding:"9px 10px",borderBottom:"1px solid var(--off2)",background:i%2===1?"var(--off2)":"var(--white)",verticalAlign:"middle"}}>{v}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {toast && <Toast msg={toast} onClose={()=>setToast(null)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
